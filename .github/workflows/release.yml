@@ -1,0 +1,40 @@
+name: Experimental v0.1.0 Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/release-trigger/v0.1.0.md'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run tests
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pytest -q
+      - name: Validate release contents
+        run: |
+          test -s README.md
+          test -s README_ZH.md
+          test -s README_EN.md
+          test -s LICENSE
+          test -s RELEASE_NOTES.md
+          test -s docs/PVE_REAL_WORLD_VALIDATION.md
+      - name: Publish first GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.1.0 >/dev/null 2>&1; then
+            echo 'Version already exists.'
+            exit 0
+          fi
+          gh release create v0.1.0 --target "$GITHUB_SHA" --title 'ProxmoxAI v0.1.0 — Experimental MVP' --notes-file RELEASE_NOTES.md --prerelease

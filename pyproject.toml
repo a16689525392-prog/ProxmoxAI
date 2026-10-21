@@ -11,3 +11,9 @@ license = "MIT"
 dependencies = ["fastapi>=0.110,<1","uvicorn>=0.27,<1","httpx>=0.26,<1","pydantic-settings>=2.2,<3"]
 [tool.setuptools.packages.find]
 include = ["proxmoxai*"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

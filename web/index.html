@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ProxmoxAI — VM Copilot</title>
+<style>
+:root{font:16px system-ui,-apple-system,Segoe UI,sans-serif;color-scheme:dark}
+body{margin:0;background:#0a1222;color:#e9f1ff}main{max-width:900px;margin:auto;padding:36px 20px}
+h1{font-size:34px;margin-bottom:5px}p{color:#a1b3cb}section{border:1px solid #26364c;background:#101d31;padding:24px;border-radius:16px;margin-top:22px}
+input,button{font:inherit;padding:12px;border-radius:9px}input{background:#081425;color:#fff;border:1px solid #49617a}
+button{background:#217bcb;color:white;border:0;cursor:pointer;margin:4px}button:hover{background:#3198ee}
+#key{width:min(95%,450px)}#prompt{width:min(95%,530px)}
+.vm{display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;border-top:1px solid #26364c;padding:14px 0}
+small{color:#a1b3cb}#out{white-space:pre-wrap;overflow-wrap:anywhere;background:#081425;padding:15px;border-radius:8px;min-height:46px}
+</style></head>
+<body><main><h1>⚡ ProxmoxAI</h1><p>AI-assisted Proxmox management with approval gates · Experimental v0.1.0</p>
+<section><h2>Connection</h2><input id="key" type="password" placeholder="APP_API_KEY" autocomplete="off">
+<button id="connect">Connect / Refresh</button><p id="mode"></p></section>
+<section><h2>Virtual Machines</h2><div id="vms">Connect first.</div></section>
+<section><h2>AI command</h2><input id="prompt" placeholder="例如：启动虚拟机 102">
+<button id="plan">Plan (does not execute)</button><pre id="out" aria-live="polite"></pre></section>
+</main><script>
+const el=id=>document.getElementById(id);
+let key="",inventory=[];
+async function api(path,method="GET",body){
+ const r=await fetch(path,{method,headers:{"X-API-Key":key,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+ const j=await r.json();if(!r.ok)throw Error(typeof j.detail==="string"?j.detail:JSON.stringify(j.detail));return j;
+}
+function msg(x){el("out").textContent=typeof x==="string"?x:JSON.stringify(x,null,2)}
+async function refresh(){
+ key=el("key").value;
+ try {
+ const [meta,vms]=await Promise.all([api("/api/meta"),api("/api/vms")]);
+ el("mode").textContent="Mode: "+meta.mode+" · "+vms.length+" VMs";inventory=vms;
+ el("vms").replaceChildren();
+ for(const vm of vms){
+ const div=document.createElement("div");div.className="vm";
+ const title=document.createElement("span");title.textContent=vm.name+" · "+vm.node+"/"+vm.vmid+" · "+vm.status;
+ const actions=document.createElement("span");
+ for(const [label,action] of [["Start","start"],["Shutdown","shutdown"],["Snapshot","snapshot"]]){
+ const b=document.createElement("button");b.textContent=label;b.onclick=()=>actionFlow(vm,action);actions.append(b);
+ }
+ div.append(title,actions);el("vms").append(div);
+ }
+ }catch(e){msg(e.message)}
+}
+async function actionFlow(vm,action,name){
+ try{
+ if(action==="snapshot" && !name){name=prompt("Snapshot name (letters, digits, - or _):");if(!name)return}
+ const preview=await api("/api/vms/"+encodeURIComponent(vm.node)+"/"+vm.vmid+"/preview","POST",{action,snapname:name||null});
+ if(!confirm("Confirm "+action+" on "+vm.node+"/"+vm.vmid+" ("+vm.name+")? This changes VM state."))return;
+ msg(await api("/api/actions/execute","POST",{approval_id:preview.approval_id}));await refresh();
+ }catch(e){msg(e.message)}
+}
+el("connect").onclick=refresh;
+el("plan").onclick=async()=>{
+ try{
+ const r=await api("/api/agent/plan","POST",{text:el("prompt").value});
+ if(r.plan.intent==="list"){await refresh();msg(r.plan);return}
+ if(r.plan.intent==="status"){msg(r);return}
+ msg(r.plan);await actionFlow(r.vm,r.plan.intent,r.plan.snapname);
+ }catch(e){msg(e.message)}
+};
+</script></body></html>
